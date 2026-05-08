@@ -24,6 +24,8 @@ interface SiteInputs {
   sameMonthLastYearDailyVolume: number;
 }
 
+type ViewMode = "district" | "site";
+
 const defaultSiteInputs: SiteInputs = {
   siteName: "无锡某网点",
   month: "2026-06",
@@ -71,98 +73,17 @@ const defaultCustomers: CustomerChange[] = [
 ];
 
 export function AppShell() {
+  const [viewMode, setViewMode] = useState<ViewMode>("site");
   const [siteInputs, setSiteInputs] = useState(defaultSiteInputs);
   const [customers, setCustomers] = useState(defaultCustomers);
   const [statusMessage, setStatusMessage] = useState("手工输入模式");
   const captureRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const model = useMemo(() => {
-    const beforeRebate = calculateRebate({
-      policy: sunanPolicyTemplate,
-      month: siteInputs.month,
-      policyEffectiveDailyVolume: siteInputs.policyEffectiveDailyVolume,
-      businessDailyVolume: siteInputs.businessDailyVolume,
-      layerBaseDailyVolume: siteInputs.layerBaseDailyVolume
-    });
-    const stacked = calculateStackedVolumes({
-      basePolicyEffectiveDailyVolume: siteInputs.policyEffectiveDailyVolume,
-      baseBusinessDailyVolume: siteInputs.businessDailyVolume,
-      customers
-    });
-    const afterRebate = calculateRebate({
-      policy: sunanPolicyTemplate,
-      month: siteInputs.month,
-      policyEffectiveDailyVolume: Math.max(stacked.policyEffectiveDailyVolume, 1),
-      businessDailyVolume: Math.max(stacked.businessDailyVolume, 1),
-      layerBaseDailyVolume: siteInputs.layerBaseDailyVolume
-    });
-    const beforePenalty = calculatePenalty({
-      month: siteInputs.month,
-      targetDailyVolume: siteInputs.businessTargetDailyVolume,
-      actualDailyVolume: siteInputs.businessDailyVolume,
-      yoyDailyVolume: siteInputs.sameMonthLastYearDailyVolume
-    });
-    const afterPenalty = calculatePenalty({
-      month: siteInputs.month,
-      targetDailyVolume: siteInputs.businessTargetDailyVolume,
-      actualDailyVolume: stacked.businessDailyVolume,
-      yoyDailyVolume: siteInputs.sameMonthLastYearDailyVolume
-    });
-    const customerContributions = customers.map(calculateCustomerContribution);
-    const enabledCustomerContributions = customerContributions.filter(
-      (item) => item.enabled
-    );
-    const customerBaseProfitDaily = enabledCustomerContributions.reduce(
-      (sum, item) => sum + item.dailyRevenue - item.dailyCost,
-      0
-    );
-    const returnIncomeDaily = enabledCustomerContributions.reduce(
-      (sum, item) => sum + item.dailyReturnIncome,
-      0
-    );
-    const otherIncomeDaily = enabledCustomerContributions.reduce(
-      (sum, item) => sum + item.dailyOtherIncome,
-      0
-    );
-    const rebateDeltaMonthly = calculateRebateDelta(beforeRebate, afterRebate);
-    const rebateDeltaDaily = rebateDeltaMonthly / beforeRebate.days;
-    const penaltyReductionDaily =
-      beforePenalty.dailyPenalty - afterPenalty.dailyPenalty;
-    const increment = calculateIncrementBreakdown({
-      month: siteInputs.month,
-      stockBenefitDaily: rebateDeltaDaily,
-      newCustomerProfitDaily: customerBaseProfitDaily,
-      penaltyReductionDaily,
-      returnIncomeDaily,
-      otherBenefitDaily: otherIncomeDaily
-    });
-    const recommendation = generateRecommendation({
-      increment,
-      hasCostData: enabledCustomerContributions.every((item) => {
-        const customer = customers.find((candidate) => candidate.id === item.id);
-        return customer !== undefined && customer.costPerTicket > 0;
-      })
-    });
-    const nextTier = findNextTier(
-      sunanPolicyTemplate.tiers,
-      afterRebate.policyEffectiveDailyVolume
-    );
-
-    return {
-      beforeRebate,
-      afterRebate,
-      beforePenalty,
-      afterPenalty,
-      customerContributions,
-      enabledCustomerContributions,
-      increment,
-      nextTier,
-      recommendation,
-      rebateDeltaDaily,
-      stacked
-    };
-  }, [customers, siteInputs]);
+  const model = useMemo(
+    () => buildWorkbenchModel(siteInputs, customers),
+    [customers, siteInputs]
+  );
 
   const updateSiteInput = <K extends keyof SiteInputs>(
     key: K,
@@ -261,6 +182,52 @@ export function AppShell() {
   const exportData = async () => {
     const XLSX = await import("xlsx");
     const workbook = XLSX.utils.book_new();
+    if (viewMode === "district") {
+      const cases = buildDistrictCases(
+        siteInputs.month,
+        siteInputs.layerBaseDailyVolume
+      );
+      const publicRows = [
+        ["项目", "数值", "单位"],
+        ["宣讲视角", "管区视角", ""],
+        ["网点名称", siteInputs.siteName, ""],
+        ["测算月份", siteInputs.month, ""],
+        ["自然月天数", model.beforeRebate.days, "天"],
+        ["当前政策有效票量", model.afterRebate.policyEffectiveDailyVolume, "票/天"],
+        ["当前档位", model.afterRebate.tier.name, ""],
+        ["分层基数", siteInputs.layerBaseDailyVolume, "票/天"],
+        ["方案后月度返利", model.afterRebate.monthlyRebate, "元"],
+        ["业务量指标", siteInputs.businessTargetDailyVolume, "票/天"],
+        ["方案后业务量处罚", model.afterPenalty.monthlyPenalty, "元"]
+      ];
+      const caseRows = [
+        ["案例", "日均票量", "说明", "月度返利"],
+        ...cases.map((item) => [
+          item.name,
+          item.volume,
+          item.summary,
+          item.monthlyRebate
+        ])
+      ];
+
+      XLSX.utils.book_append_sheet(
+        workbook,
+        XLSX.utils.aoa_to_sheet(publicRows),
+        "政策宣讲总览"
+      );
+      XLSX.utils.book_append_sheet(
+        workbook,
+        XLSX.utils.aoa_to_sheet(caseRows),
+        "公开案例"
+      );
+      XLSX.writeFile(
+        workbook,
+        `中通面单返利政策宣讲-${siteInputs.siteName}-${siteInputs.month}.xlsx`
+      );
+      setStatusMessage("已导出宣讲数据");
+      return;
+    }
+
     const summaryRows = [
       ["项目", "数值", "单位"],
       ["网点名称", siteInputs.siteName, ""],
@@ -345,8 +312,18 @@ export function AppShell() {
           <span>中通面单返利测算工具</span>
         </div>
         <div className="segmented" aria-label="视角切换">
-          <button type="button">管区视角</button>
-          <button type="button" className="active">
+          <button
+            type="button"
+            className={viewMode === "district" ? "active" : undefined}
+            onClick={() => setViewMode("district")}
+          >
+            管区视角
+          </button>
+          <button
+            type="button"
+            className={viewMode === "site" ? "active" : undefined}
+            onClick={() => setViewMode("site")}
+          >
             网点视角
           </button>
         </div>
@@ -388,6 +365,13 @@ export function AppShell() {
         </div>
       </header>
 
+      {viewMode === "district" ? (
+        <DistrictWorkbench
+          model={model}
+          siteInputs={siteInputs}
+          updateSiteInput={updateSiteInput}
+        />
+      ) : (
       <main className="workbench">
         <aside className="panel parameter-panel">
           <PanelTitle title="网点基础" extra={statusMessage} />
@@ -708,8 +692,317 @@ export function AppShell() {
           </section>
         </aside>
       </main>
+      )}
     </div>
   );
+}
+
+function DistrictWorkbench({
+  model,
+  siteInputs,
+  updateSiteInput
+}: {
+  model: WorkbenchModel;
+  siteInputs: SiteInputs;
+  updateSiteInput: <K extends keyof SiteInputs>(
+    key: K,
+    value: SiteInputs[K]
+  ) => void;
+}) {
+  const nextTierGap =
+    model.nextTier === undefined
+      ? 0
+      : Math.max(
+          model.nextTier.minDailyVolume -
+            model.afterRebate.policyEffectiveDailyVolume,
+          0
+        );
+  const rebateLift =
+    model.afterRebate.monthlyRebate - model.beforeRebate.monthlyRebate;
+  const penaltyReduction =
+    model.beforePenalty.monthlyPenalty - model.afterPenalty.monthlyPenalty;
+  const cases = buildDistrictCases(siteInputs.month, siteInputs.layerBaseDailyVolume);
+
+  return (
+    <main className="district-workbench">
+      <section className="district-hero">
+        <div>
+          <span className="kicker">管区政策宣讲模式</span>
+          <h1>让网点一眼看懂：增量如何带来返利提升</h1>
+          <p>
+            该视角隐藏客户敏感字段和内部毛利，只展示政策档位、补贴变化、跳档距离和业务量风险，适合会议投屏、微信群转发和网点沟通。
+          </p>
+        </div>
+        <div className="district-hero-metrics">
+          <MetricCard
+            label="当前政策档位"
+            value={model.afterRebate.tier.name}
+            caption={`${formatMoney(
+              model.afterRebate.policyEffectiveDailyVolume,
+              0
+            )} 票/天`}
+          />
+          <MetricCard
+            label="距离下一档"
+            value={
+              model.nextTier === undefined
+                ? "最高档"
+                : formatMoney(nextTierGap, 0)
+            }
+            caption={model.nextTier === undefined ? "已达到最高档" : "票/天"}
+          />
+          <MetricCard
+            label="返利提升"
+            value={formatSignedMoney(rebateLift)}
+            caption="元/月"
+            tone={rebateLift >= 0 ? "good" : "bad"}
+          />
+          <MetricCard
+            label="少罚风险"
+            value={formatSignedMoney(penaltyReduction)}
+            caption="元/月"
+            tone={penaltyReduction >= 0 ? "good" : "bad"}
+          />
+        </div>
+      </section>
+
+      <section className="district-main">
+        <aside className="panel parameter-panel">
+          <PanelTitle title="宣讲参数" extra="不含客户敏感数据" />
+          <TextField
+            label="网点名称"
+            value={siteInputs.siteName}
+            onChange={(value) => updateSiteInput("siteName", value)}
+          />
+          <label className="field">
+            <span>测算月份</span>
+            <input
+              type="month"
+              value={siteInputs.month}
+              onChange={(event) => updateSiteInput("month", event.target.value)}
+            />
+          </label>
+          <NumberField
+            label="当前日均票量"
+            unit="票/天"
+            value={siteInputs.policyEffectiveDailyVolume}
+            min={1}
+            onChange={(value) =>
+              updateSiteInput("policyEffectiveDailyVolume", value)
+            }
+          />
+          <NumberField
+            label="业务量指标"
+            unit="票/天"
+            value={siteInputs.businessTargetDailyVolume}
+            min={0}
+            onChange={(value) =>
+              updateSiteInput("businessTargetDailyVolume", value)
+            }
+          />
+          <NumberField
+            label="分层基数"
+            unit="票/天"
+            value={siteInputs.layerBaseDailyVolume}
+            min={0}
+            onChange={(value) =>
+              updateSiteInput("layerBaseDailyVolume", value)
+            }
+          />
+
+          <PanelTitle title="政策档位" extra="公开口径" />
+          <div className="mini-table policy-table">
+            <div>档位</div>
+            <div>票量区间</div>
+            <div>分层补贴</div>
+            {sunanPolicyTemplate.tiers.map((tier) => (
+              <PolicyTierRow
+                active={tier.id === model.afterRebate.tier.id}
+                key={tier.id}
+                tier={tier}
+              />
+            ))}
+          </div>
+        </aside>
+
+        <section className="district-center">
+          <section className="panel chart-card">
+            <PanelTitle title="政策返利曲线" extra="投屏讲解" />
+            <RebateTrendChart
+              currentVolume={model.afterRebate.policyEffectiveDailyVolume}
+              layerBaseDailyVolume={siteInputs.layerBaseDailyVolume}
+              month={siteInputs.month}
+            />
+          </section>
+
+          <section className="panel explainer-panel">
+            <PanelTitle title="典型网点案例" extra="公开示例" />
+            <div className="case-grid">
+              {cases.map((item) => (
+                <article className="case-card" key={item.name}>
+                  <strong>{item.name}</strong>
+                  <span>{item.summary}</span>
+                  <div>
+                    <b>{formatMoney(item.monthlyRebate, 0)}</b>
+                    <small>元/月返利</small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel talking-panel">
+            <PanelTitle title="宣讲话术" extra="可直接转述" />
+            <div className="talking-list">
+              <div>政策按票量档位和分层基数测算，增量越稳定，返利变化越清楚。</div>
+              <div>业务量考核和返利政策口径不同，做增量时要同时看返利提升和处罚风险。</div>
+              <div>管区宣讲只展示公开政策和票量变化，不展示客户敏感字段和网点内部毛利。</div>
+            </div>
+          </section>
+        </section>
+
+        <aside className="right-stack">
+          <section className="panel chart-card">
+            <PanelTitle title="业务量处罚风险" extra="公开解释" />
+            <PenaltyRiskChart
+              before={model.beforePenalty}
+              after={model.afterPenalty}
+              targetDailyVolume={siteInputs.businessTargetDailyVolume}
+            />
+          </section>
+          <section className="share-card">
+            <h2>分享版摘要</h2>
+            <p>
+              {siteInputs.siteName} 当前为 {model.afterRebate.tier.name}，
+              月度返利预计 {formatMoney(model.afterRebate.monthlyRebate, 0)} 元。
+              {model.nextTier
+                ? `距离 ${model.nextTier.name} 还差 ${formatMoney(nextTierGap, 0)} 票/天。`
+                : "当前已进入最高档。"}
+            </p>
+            <div>建议沟通重点：补足稳定增量、减少处罚风险、看清跳档收益。</div>
+          </section>
+        </aside>
+      </section>
+    </main>
+  );
+}
+
+type WorkbenchModel = ReturnType<typeof buildWorkbenchModel>;
+
+function buildWorkbenchModel(siteInputs: SiteInputs, customers: CustomerChange[]) {
+  const beforeRebate = calculateRebate({
+    policy: sunanPolicyTemplate,
+    month: siteInputs.month,
+    policyEffectiveDailyVolume: siteInputs.policyEffectiveDailyVolume,
+    businessDailyVolume: siteInputs.businessDailyVolume,
+    layerBaseDailyVolume: siteInputs.layerBaseDailyVolume
+  });
+  const stacked = calculateStackedVolumes({
+    basePolicyEffectiveDailyVolume: siteInputs.policyEffectiveDailyVolume,
+    baseBusinessDailyVolume: siteInputs.businessDailyVolume,
+    customers
+  });
+  const afterRebate = calculateRebate({
+    policy: sunanPolicyTemplate,
+    month: siteInputs.month,
+    policyEffectiveDailyVolume: Math.max(stacked.policyEffectiveDailyVolume, 1),
+    businessDailyVolume: Math.max(stacked.businessDailyVolume, 1),
+    layerBaseDailyVolume: siteInputs.layerBaseDailyVolume
+  });
+  const beforePenalty = calculatePenalty({
+    month: siteInputs.month,
+    targetDailyVolume: siteInputs.businessTargetDailyVolume,
+    actualDailyVolume: siteInputs.businessDailyVolume,
+    yoyDailyVolume: siteInputs.sameMonthLastYearDailyVolume
+  });
+  const afterPenalty = calculatePenalty({
+    month: siteInputs.month,
+    targetDailyVolume: siteInputs.businessTargetDailyVolume,
+    actualDailyVolume: stacked.businessDailyVolume,
+    yoyDailyVolume: siteInputs.sameMonthLastYearDailyVolume
+  });
+  const customerContributions = customers.map(calculateCustomerContribution);
+  const enabledCustomerContributions = customerContributions.filter(
+    (item) => item.enabled
+  );
+  const customerBaseProfitDaily = enabledCustomerContributions.reduce(
+    (sum, item) => sum + item.dailyRevenue - item.dailyCost,
+    0
+  );
+  const returnIncomeDaily = enabledCustomerContributions.reduce(
+    (sum, item) => sum + item.dailyReturnIncome,
+    0
+  );
+  const otherIncomeDaily = enabledCustomerContributions.reduce(
+    (sum, item) => sum + item.dailyOtherIncome,
+    0
+  );
+  const rebateDeltaMonthly = calculateRebateDelta(beforeRebate, afterRebate);
+  const rebateDeltaDaily = rebateDeltaMonthly / beforeRebate.days;
+  const penaltyReductionDaily =
+    beforePenalty.dailyPenalty - afterPenalty.dailyPenalty;
+  const increment = calculateIncrementBreakdown({
+    month: siteInputs.month,
+    stockBenefitDaily: rebateDeltaDaily,
+    newCustomerProfitDaily: customerBaseProfitDaily,
+    penaltyReductionDaily,
+    returnIncomeDaily,
+    otherBenefitDaily: otherIncomeDaily
+  });
+  const recommendation = generateRecommendation({
+    increment,
+    hasCostData: enabledCustomerContributions.every((item) => {
+      const customer = customers.find((candidate) => candidate.id === item.id);
+      return customer !== undefined && customer.costPerTicket > 0;
+    })
+  });
+  const nextTier = findNextTier(
+    sunanPolicyTemplate.tiers,
+    afterRebate.policyEffectiveDailyVolume
+  );
+
+  return {
+    beforeRebate,
+    afterRebate,
+    beforePenalty,
+    afterPenalty,
+    customerContributions,
+    enabledCustomerContributions,
+    increment,
+    nextTier,
+    recommendation,
+    rebateDeltaDaily,
+    stacked
+  };
+}
+
+function buildDistrictCases(month: string, layerBaseDailyVolume: number) {
+  return [
+    {
+      name: "补足指标型",
+      volume: 8000,
+      summary: "日均从 7500 补到 8000，重点解释少罚款和稳定增量。"
+    },
+    {
+      name: "跳档成长型",
+      volume: 10000,
+      summary: "接近下一档时，重点看全量返利变化和新增稳定客户。"
+    },
+    {
+      name: "规模普惠型",
+      volume: 15000,
+      summary: "中高票量网点重点感受政策覆盖面和分层补贴。"
+    }
+  ].map((item) => ({
+    ...item,
+    monthlyRebate: calculateRebate({
+      policy: sunanPolicyTemplate,
+      month,
+      policyEffectiveDailyVolume: item.volume,
+      businessDailyVolume: item.volume,
+      layerBaseDailyVolume
+    }).monthlyRebate
+  }));
 }
 
 function PanelTitle({ title, extra }: { title: string; extra?: string }) {

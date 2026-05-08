@@ -7,6 +7,7 @@ describe("App", () => {
     const html = renderToStaticMarkup(<App />);
 
     expect(html).toContain("中通面单返利测算工具");
+    expect(html).toContain("管区视角");
     expect(html).toContain("网点视角");
     expect(html).toContain("月度总返利");
     expect(html).toContain("客户叠加测算");
