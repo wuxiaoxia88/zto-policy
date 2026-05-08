@@ -1,0 +1,53 @@
+# OS 生成的文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器/IDE
+.vscode/
+.idea/
+.cursor/
+.claude/
+*.swp
+*.swo
+*~
+
+# 临时文件
+*.tmp
+*.bak
+*.log
+.env
+.env.*
+~$*.xlsx
+~$*.docx
+
+# PDF 提取的临时文本
+*_raw.txt
+
+# 本地原始参考资料: 不随开源仓库发布
+江苏无锡快递网点新政策讲解会议记录.md
+苏南标准.md
+发件成本测算.md
+新面单返利政策规则与测算(浮动基数模式).md
+利润测算案例一.md
+利润测算案例二.md
+业务量考核标准.md
+网点板块财务管理能力.pdf
+苏州金阊一部利润表*.xlsx
+面单返利测算*.jpg
+docs/ZTO_Brand_Design_Guidelines.md
+
+# 开发期截图(Chrome headless 产物,不入版本库)
+.screenshots/
+
+# Node / 前端开发产物(Phase 1 之后可能用到)
+node_modules/
+dist/
+build/
+.cache/
+
+# Python(如果将来用 openpyxl 构建 Excel)
+__pycache__/
+*.pyc
+.venv/
+venv/
