@@ -9,8 +9,10 @@ import {
   calculateStackedVolumes,
   generateRecommendation
 } from "../../core";
-import type { CustomerChange, PolicyTier } from "../../core";
+import type { CustomerChange, PenaltyResult, PolicyTier } from "../../core";
+import { EChart } from "../charts/EChart";
 import { sunanPolicyTemplate } from "../../data/policy-presets";
+import type { EChartsCoreOption as EChartsOption } from "echarts/core";
 
 interface SiteInputs {
   siteName: string;
@@ -71,7 +73,7 @@ const defaultCustomers: CustomerChange[] = [
 export function AppShell() {
   const [siteInputs, setSiteInputs] = useState(defaultSiteInputs);
   const [customers, setCustomers] = useState(defaultCustomers);
-  const [importMessage, setImportMessage] = useState("手工输入模式");
+  const [statusMessage, setStatusMessage] = useState("手工输入模式");
   const captureRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -228,10 +230,10 @@ export function AppShell() {
         setCustomers(payload.customers.map(sanitizeCustomer));
       }
 
-      setImportMessage(`已导入 ${file.name}`);
+      setStatusMessage(`已导入 ${file.name}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "导入失败";
-      setImportMessage(message);
+      setStatusMessage(message);
     } finally {
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
@@ -253,6 +255,86 @@ export function AppShell() {
     link.href = dataUrl;
     link.download = `中通面单返利测算-${siteInputs.siteName}-${siteInputs.month}.png`;
     link.click();
+    setStatusMessage("已生成图片");
+  };
+
+  const exportData = async () => {
+    const XLSX = await import("xlsx");
+    const workbook = XLSX.utils.book_new();
+    const summaryRows = [
+      ["项目", "数值", "单位"],
+      ["网点名称", siteInputs.siteName, ""],
+      ["测算月份", siteInputs.month, ""],
+      ["自然月天数", model.beforeRebate.days, "天"],
+      ["当前政策有效票量", siteInputs.policyEffectiveDailyVolume, "票/天"],
+      ["方案后政策有效票量", model.afterRebate.policyEffectiveDailyVolume, "票/天"],
+      ["分层基数", siteInputs.layerBaseDailyVolume, "票/天"],
+      ["当前月度返利", model.beforeRebate.monthlyRebate, "元"],
+      ["方案后月度返利", model.afterRebate.monthlyRebate, "元"],
+      ["返利变化", model.afterRebate.monthlyRebate - model.beforeRebate.monthlyRebate, "元"],
+      ["当前业务量处罚", model.beforePenalty.monthlyPenalty, "元"],
+      ["方案后业务量处罚", model.afterPenalty.monthlyPenalty, "元"],
+      ["最终净影响", model.increment.finalMonthlyImpact ?? 0, "元/月"],
+      ["决策建议", model.recommendation.level, ""]
+    ];
+    const customerRows = model.customerContributions.map((item) => [
+      item.enabled ? "启用" : "停用",
+      item.name,
+      item.policyEffectiveDailyVolume,
+      item.businessDailyVolume,
+      customers.find((customer) => customer.id === item.id)?.pricePerTicket ?? 0,
+      customers.find((customer) => customer.id === item.id)?.costPerTicket ?? 0,
+      item.dailyRevenue,
+      item.dailyCost,
+      item.dailyReturnIncome,
+      item.dailyOtherIncome,
+      item.dailyProfitBeforeRebate
+    ]);
+    const breakdownRows = [
+      ["项目", "日影响", "月影响"],
+      ["返利变化", model.increment.stockBenefitDaily, model.increment.stockBenefitDaily * model.beforeRebate.days],
+      ["客户自身毛利", model.increment.newCustomerProfitDaily, model.increment.newCustomerProfitDaily * model.beforeRebate.days],
+      ["退件收益", model.increment.returnIncomeDaily, model.increment.returnIncomeDaily * model.beforeRebate.days],
+      ["其他收益", model.increment.otherBenefitDaily, model.increment.otherBenefitDaily * model.beforeRebate.days],
+      ["少罚款", model.increment.penaltyReductionDaily, model.increment.penaltyReductionDaily * model.beforeRebate.days],
+      ["合计", model.increment.finalDailyImpact, model.increment.finalMonthlyImpact ?? 0]
+    ];
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet(summaryRows),
+      "测算总览"
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        [
+          "状态",
+          "客户",
+          "政策有效票量",
+          "业务量票量",
+          "报价",
+          "成本",
+          "日收入",
+          "日成本",
+          "日退件收益",
+          "日其他收益",
+          "日贡献"
+        ],
+        ...customerRows
+      ]),
+      "客户明细"
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet(breakdownRows),
+      "增量拆解"
+    );
+    XLSX.writeFile(
+      workbook,
+      `中通面单返利测算-${siteInputs.siteName}-${siteInputs.month}.xlsx`
+    );
+    setStatusMessage("已导出数据");
   };
 
   return (
@@ -284,6 +366,13 @@ export function AppShell() {
           </button>
           <button
             type="button"
+            className="ghost-button"
+            onClick={() => void exportData()}
+          >
+            导出数据
+          </button>
+          <button
+            type="button"
             className="primary-button"
             onClick={() => void exportWorkspace()}
           >
@@ -301,7 +390,7 @@ export function AppShell() {
 
       <main className="workbench">
         <aside className="panel parameter-panel">
-          <PanelTitle title="网点基础" extra={importMessage} />
+          <PanelTitle title="网点基础" extra={statusMessage} />
           <TextField
             label="网点名称"
             value={siteInputs.siteName}
@@ -598,6 +687,14 @@ export function AppShell() {
               penaltyReductionDaily={model.increment.penaltyReductionDaily}
             />
           </section>
+          <section className="panel chart-card">
+            <PanelTitle title="业务量处罚风险" extra="两条政策取其一" />
+            <PenaltyRiskChart
+              before={model.beforePenalty}
+              after={model.afterPenalty}
+              targetDailyVolume={siteInputs.businessTargetDailyVolume}
+            />
+          </section>
           <section className="insight-card">
             <h2>决策建议</h2>
             <p>{model.recommendation.title}</p>
@@ -744,8 +841,8 @@ function RebateTrendChart({
   month: string;
 }) {
   const chartMaxVolume = Math.max(30000, Math.ceil(currentVolume * 1.35));
-  const samples = Array.from({ length: 26 }, (_, index) => {
-    const volume = Math.max(1, (chartMaxVolume / 25) * index);
+  const samples = Array.from({ length: 40 }, (_, index) => {
+    const volume = Math.max(1, (chartMaxVolume / 39) * index);
     const rebate = calculateRebate({
       policy: sunanPolicyTemplate,
       month,
@@ -755,48 +852,66 @@ function RebateTrendChart({
     });
     return { volume, value: rebate.monthlyRebate };
   });
-  const maxRebate = Math.max(...samples.map((item) => item.value));
-  const points = samples.map((item) => ({
-    x: 34 + (item.volume / chartMaxVolume) * 326,
-    y: 170 - (item.value / maxRebate) * 126
-  }));
-  const currentX = 34 + (currentVolume / chartMaxVolume) * 326;
-  const currentY =
-    170 -
-    (calculateRebate({
-      policy: sunanPolicyTemplate,
-      month,
-      policyEffectiveDailyVolume: currentVolume,
-      businessDailyVolume: currentVolume,
-      layerBaseDailyVolume
-    }).monthlyRebate /
-      maxRebate) *
-      126;
+  const currentRebate = calculateRebate({
+    policy: sunanPolicyTemplate,
+    month,
+    policyEffectiveDailyVolume: currentVolume,
+    businessDailyVolume: currentVolume,
+    layerBaseDailyVolume
+  }).monthlyRebate;
+  const option: EChartsOption = {
+    animationDuration: 450,
+    color: ["#0072bc"],
+    grid: { left: 44, right: 18, top: 26, bottom: 34 },
+    tooltip: {
+      trigger: "axis",
+      valueFormatter: (value: unknown) => `${formatMoney(Number(value))} 元/月`
+    },
+    xAxis: {
+      type: "value",
+      min: 0,
+      max: chartMaxVolume,
+      axisLabel: { color: "#64748b", formatter: compactVolume },
+      splitLine: { lineStyle: { color: "#eef3f7" } }
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: { color: "#64748b", formatter: compactMoney },
+      splitLine: { lineStyle: { color: "#eef3f7" } }
+    },
+    series: [
+      {
+        name: "月度返利",
+        type: "line",
+        smooth: true,
+        symbol: "none",
+        lineStyle: { width: 4, color: "#0072bc" },
+        areaStyle: { color: "rgba(0, 114, 188, 0.12)" },
+        data: samples.map((item) => [item.volume, item.value]),
+        markLine: {
+          symbol: "none",
+          label: {
+            color: "#005a96",
+            formatter: `当前 ${formatMoney(currentVolume, 0)} 票/天`
+          },
+          lineStyle: { color: "#00aeef", type: "dashed", width: 2 },
+          data: [{ xAxis: currentVolume }]
+        },
+        markPoint: {
+          symbolSize: 54,
+          label: {
+            color: "#fff",
+            formatter: `${formatMoney(currentRebate / 10000, 1)}万`
+          },
+          itemStyle: { color: "#0072bc" },
+          data: [{ coord: [currentVolume, currentRebate], name: "当前返利" }]
+        }
+      }
+    ]
+  };
 
   return (
-    <svg viewBox="0 0 388 220" role="img" aria-label="返利趋势曲线">
-      <line x1="34" y1="170" x2="364" y2="170" className="axis" />
-      <line x1="34" y1="34" x2="34" y2="170" className="axis" />
-      <path
-        d={`${buildLinePath(points)} L 360 170 L 34 170 Z`}
-        className="chart-area"
-      />
-      <path d={buildLinePath(points)} className="smooth-line" />
-      <line x1={currentX} y1="34" x2={currentX} y2="170" className="guide-line" />
-      <circle cx={currentX} cy={currentY} r="6" className="current-dot" />
-      <text x={Math.min(currentX + 8, 296)} y={Math.max(currentY - 10, 22)}>
-        当前 {formatMoney(currentVolume, 0)}
-      </text>
-      <text x="38" y="198">
-        0
-      </text>
-      <text x="154" y="198">
-        {formatMoney(chartMaxVolume / 3, 0)}
-      </text>
-      <text x="260" y="198">
-        {formatMoney((chartMaxVolume / 3) * 2, 0)}
-      </text>
-    </svg>
+    <EChart option={option} ariaLabel="返利趋势曲线" height={238} />
   );
 }
 
@@ -822,46 +937,139 @@ function WaterfallChart({
     { label: "其他", value: otherBenefitDaily * days },
     { label: "少罚", value: penaltyReductionDaily * days }
   ];
-  const maxAbs = Math.max(1, ...items.map((item) => Math.abs(item.value)));
+  const total = items.reduce((sum, item) => sum + item.value, 0);
+  const option: EChartsOption = {
+    animationDuration: 420,
+    grid: { left: 46, right: 18, top: 24, bottom: 34 },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      valueFormatter: (value: unknown) =>
+        `${formatSignedMoney(Number(value))} 元/月`
+    },
+    xAxis: {
+      type: "category",
+      data: [...items.map((item) => item.label), "合计"],
+      axisLabel: { color: "#64748b" },
+      axisTick: { show: false }
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: { color: "#64748b", formatter: compactMoney },
+      splitLine: { lineStyle: { color: "#eef3f7" } }
+    },
+    series: [
+      {
+        name: "月影响",
+        type: "bar",
+        barWidth: 28,
+        label: {
+          show: true,
+          position: "top",
+          color: "#425466",
+          formatter: (params: { value: unknown }) =>
+            formatSignedMoney(Number(params.value))
+        },
+        data: [
+          ...items.map((item) => ({
+            value: item.value,
+            itemStyle: {
+              color: item.value >= 0 ? "#16a34a" : "#dc2626",
+              borderRadius: [4, 4, 0, 0]
+            }
+          })),
+          {
+            value: total,
+            itemStyle: { color: "#005a96", borderRadius: [4, 4, 0, 0] }
+          }
+        ]
+      }
+    ]
+  };
 
   return (
-    <svg viewBox="0 0 388 220" role="img" aria-label="增量影响拆解瀑布图">
-      <line x1="26" y1="112" x2="368" y2="112" className="axis" />
-      {items.map((item, index) => {
-        const height = Math.max(4, (Math.abs(item.value) / maxAbs) * 72);
-        const x = 38 + index * 66;
-        const y = item.value >= 0 ? 112 - height : 112;
-
-        return (
-          <g key={item.label}>
-            <rect
-              x={x}
-              y={y}
-              width="36"
-              height={height}
-              className={item.value >= 0 ? "bar-good" : "bar-bad"}
-              rx="4"
-            />
-            <text x={x - 4} y={item.value >= 0 ? y - 8 : y + height + 16}>
-              {formatSignedMoney(item.value)}
-            </text>
-            <text x={x + 4} y="188">
-              {item.label}
-            </text>
-          </g>
-        );
-      })}
-      <text x="228" y="42" className="chart-total">
-        合计 {formatSignedMoney(items.reduce((sum, item) => sum + item.value, 0))}
-      </text>
-    </svg>
+    <EChart option={option} ariaLabel="增量影响拆解瀑布图" height={246} />
   );
 }
 
-function buildLinePath(points: Array<{ x: number; y: number }>): string {
-  return points
-    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
-    .join(" ");
+function PenaltyRiskChart({
+  before,
+  after,
+  targetDailyVolume
+}: {
+  before: PenaltyResult;
+  after: PenaltyResult;
+  targetDailyVolume: number;
+}) {
+  const option: EChartsOption = {
+    animationDuration: 420,
+    color: ["#0072bc", "#fa8c16"],
+    grid: { left: 46, right: 18, top: 30, bottom: 38 },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" }
+    },
+    legend: {
+      top: 0,
+      right: 0,
+      textStyle: { color: "#64748b" }
+    },
+    xAxis: {
+      type: "category",
+      data: ["当前", "方案后"],
+      axisLabel: { color: "#64748b" },
+      axisTick: { show: false }
+    },
+    yAxis: [
+      {
+        type: "value",
+        name: "票/天",
+        axisLabel: { color: "#64748b", formatter: compactVolume },
+        splitLine: { lineStyle: { color: "#eef3f7" } }
+      },
+      {
+        type: "value",
+        name: "元/月",
+        axisLabel: { color: "#64748b", formatter: compactMoney },
+        splitLine: { show: false }
+      }
+    ],
+    series: [
+      {
+        name: "业务量",
+        type: "bar",
+        barWidth: 28,
+        data: [before.actualDailyVolume, after.actualDailyVolume],
+        markLine: {
+          symbol: "none",
+          label: {
+            color: "#005a96",
+            formatter: `指标 ${formatMoney(targetDailyVolume, 0)}`
+          },
+          lineStyle: { color: "#0072bc", type: "dashed" },
+          data: [{ yAxis: targetDailyVolume }]
+        }
+      },
+      {
+        name: "处罚",
+        type: "line",
+        yAxisIndex: 1,
+        smooth: true,
+        symbolSize: 8,
+        lineStyle: { width: 3 },
+        data: [before.monthlyPenalty, after.monthlyPenalty]
+      }
+    ]
+  };
+
+  return (
+    <div>
+      <EChart option={option} ariaLabel="业务量处罚风险图" height={236} />
+      <div className="chart-note">
+        当前 {penaltyText(before.reason)}，方案后 {penaltyText(after.reason)}。
+      </div>
+    </div>
+  );
 }
 
 function findNextTier(
@@ -903,6 +1111,22 @@ function toneClass(level: string): string {
   }
 
   return "warn";
+}
+
+function compactMoney(value: number): string {
+  if (Math.abs(value) >= 10000) {
+    return `${formatMoney(value / 10000, 1)}万`;
+  }
+
+  return formatMoney(value, 0);
+}
+
+function compactVolume(value: number): string {
+  if (Math.abs(value) >= 10000) {
+    return `${formatMoney(value / 10000, 1)}万`;
+  }
+
+  return formatMoney(value, 0);
 }
 
 function formatMoney(value: number, maximumFractionDigits = 2): string {

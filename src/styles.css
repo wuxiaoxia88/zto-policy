@@ -489,11 +489,21 @@ input[type="checkbox"] {
   padding: 16px;
 }
 
-.chart-card svg {
+.chart-card svg,
+.chart-card .echart {
   width: 100%;
-  height: auto;
   display: block;
   margin-top: 10px;
+}
+
+.echart {
+  min-height: 220px;
+}
+
+.chart-note {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
 }
 
 svg text {
@@ -646,14 +656,14 @@ svg text {
     width: 100%;
     justify-self: start;
     justify-content: flex-start;
-    gap: 6px;
+    gap: 5px;
   }
 
   .top-actions .ghost-button,
   .top-actions .primary-button {
     min-height: 34px;
-    padding: 0 9px;
-    font-size: 14px;
+    padding: 0 7px;
+    font-size: 13px;
   }
 
   .hero-copy,
