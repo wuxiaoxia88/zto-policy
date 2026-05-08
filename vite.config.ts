@@ -17,9 +17,12 @@ export default defineConfig(({ mode }) => ({
     sourcemap: true
   },
   test: {
-    environment: "jsdom",
+    environment: "node",
     globals: true,
-    setupFiles: "./src/test/setup.ts",
+    pool: "threads",
+    fileParallelism: false,
+    maxWorkers: 1,
+    minWorkers: 1,
     css: true
   }
 }));

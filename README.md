@@ -12,6 +12,7 @@
 - [测试与调试规范](./docs/TESTING.md)
 - [使用说明](./docs/USER_GUIDE.md)
 - [开发路线图](./docs/ROADMAP.md)
+- [计算引擎说明](./docs/CALCULATION.md)
 - [原始资料说明](./docs/SOURCE-MATERIALS.md)
 
 说明: 当前 `index.html` 仍是上一阶段原型,核心基于旧版江苏 12 档/1.2 元补贴模型。新版 PRD 已根据 `江苏无锡快递网点新政策讲解会议记录.md` 和 `苏南标准.md` 重新整理,后续实现应以 PRD v2.0、技术规划和 UI 设计规范 v3.0 为准。
@@ -39,7 +40,7 @@ pnpm build
 
 ## 当前版本 · Phase 1(Web 模拟器)
 
-当前主线版本: `v0.2.0`，已完成 React + TypeScript + Vite 工程基线。下面列表为旧原型能力，仅供历史参考。
+当前主线版本: `v0.3.0`，已完成计算引擎第一版。下面列表为旧原型能力，仅供历史参考。
 
 - ✅ 简易模式 / 精细模式 切换
 - ✅ Hero 区醒目大数字:月度返利、档位徽章、新旧对比
@@ -77,6 +78,7 @@ pnpm build
 │   ├── TESTING.md                                 # 测试与调试规范
 │   ├── USER_GUIDE.md                              # 使用说明
 │   ├── ROADMAP.md                                 # 版本路线图
+│   ├── CALCULATION.md                             # 计算引擎说明
 │   ├── SOURCE-MATERIALS.md                        # 原始资料开源处理说明
 │   ├── ui-preview/                                # UI 预览图与静态预览页
 │   └── plans/

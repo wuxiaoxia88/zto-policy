@@ -1,7 +1,7 @@
 {
   "name": "zto-policy",
   "private": false,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "中通面单返利测算与客户决策工具",
   "license": "MIT",
