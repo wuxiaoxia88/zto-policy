@@ -108,6 +108,8 @@
 选择视角 -> 选择月份 -> 选择或导入政策模板 -> 填写网点参数 -> 添加客户 -> 查看结论 -> 导出分享
 ```
 
+当前 `v0.4.0` 已开放网点视角 MVP：可手工填写基础参数、拖动日均票量、追加/停用/删除客户、查看实时测算结果，并保存当前工作台图片。完整 XLSX/CSV 导入、客户复制、隐私导出开关和管区视角将在后续版本补齐。
+
 ### 4.1 当前网点测算
 
 1. 选择测算月份。
@@ -128,7 +130,7 @@
 1. 点击“追加客户”。
 2. 填写客户票量、报价、成本、退件率。
 3. 可继续追加多个客户。
-4. 每个客户可启用、停用、复制、删除。
+4. 每个客户可启用、停用、删除。
 5. 查看最终净影响和决策建议。
 
 ### 4.4 业务量处罚测算
@@ -138,6 +140,37 @@
 3. 填写去年同期业务量。
 4. 系统判断按未达标处罚还是同比负增长处罚。
 5. 两种处罚只取其一，不叠加。
+
+### 4.5 JSON 参数导入
+
+当前 MVP 支持导入 JSON 文件，字段示例:
+
+```json
+{
+  "siteInputs": {
+    "siteName": "无锡某网点",
+    "month": "2026-06",
+    "policyEffectiveDailyVolume": 7500,
+    "businessDailyVolume": 7500,
+    "layerBaseDailyVolume": 4500,
+    "businessTargetDailyVolume": 8000,
+    "sameMonthLastYearDailyVolume": 7600
+  },
+  "customers": [
+    {
+      "id": "customer-a",
+      "name": "服装客户 A",
+      "enabled": true,
+      "policyEffectiveDailyVolume": 500,
+      "businessDailyVolume": 500,
+      "pricePerTicket": 2.5,
+      "costPerTicket": 2.18,
+      "returnRate": 0.5,
+      "returnIncomePerTicket": 1.2
+    }
+  ]
+}
+```
 
 ---
 
