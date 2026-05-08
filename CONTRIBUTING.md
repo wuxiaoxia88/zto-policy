@@ -13,9 +13,9 @@
 ## 提交前检查
 
 ```bash
-npm run lint
-npm run test
-npm run build
+pnpm lint
+pnpm test
+pnpm build
 ```
 
 在工程化版本完成前，请至少确认 Markdown 文档可读、链接有效、截图文件存在。

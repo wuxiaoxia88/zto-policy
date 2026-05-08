@@ -20,11 +20,26 @@
 
 ## 快速开始
 
-**直接打开浏览器使用**:双击 [`index.html`](./index.html) 即可。无需安装、无需服务器。
+当前主线已进入工程化开发。旧版单文件原型已保留在 [`legacy/index.html`](./legacy/index.html)，可直接双击查看历史效果。
 
-需要联网加载 Chart.js(约 200KB)用于曲线图,首次加载后浏览器会缓存。
+开发运行:
+
+```bash
+pnpm install
+pnpm dev
+```
+
+测试与构建:
+
+```bash
+pnpm lint
+pnpm test
+pnpm build
+```
 
 ## 当前版本 · Phase 1(Web 模拟器)
+
+当前主线版本: `v0.2.0`，已完成 React + TypeScript + Vite 工程基线。下面列表为旧原型能力，仅供历史参考。
 
 - ✅ 简易模式 / 精细模式 切换
 - ✅ Hero 区醒目大数字:月度返利、档位徽章、新旧对比
@@ -47,7 +62,12 @@
 
 ```
 .
-├── index.html                                    # Web 模拟器主文件(单文件便携)
+├── index.html                                    # Vite 应用入口
+├── src/                                          # React + TypeScript 源码
+├── legacy/
+│   └── index.html                                # 旧版 Web 模拟器原型
+├── package.json                                  # 前端工程配置
+├── pnpm-lock.yaml                                # 依赖锁文件
 ├── docs/
 │   ├── PRD-中通面单返利测算工具.md                # 最新 PRD v2.0
 │   ├── TECH-UI-开发规划.md                        # 技术框架、UI方向、开发规划

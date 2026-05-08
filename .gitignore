@@ -45,6 +45,7 @@ node_modules/
 dist/
 build/
 .cache/
+.npm-cache/
 
 # Python(如果将来用 openpyxl 构建 Excel)
 __pycache__/
